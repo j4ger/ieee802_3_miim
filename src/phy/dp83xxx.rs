@@ -20,7 +20,9 @@ pub type DP83640<MIIM> = DP83XXX<MIIM, true>;
 pub type DP83848<MIIM> = DP83XXX<MIIM, false>;
 
 impl<MIIM: Miim, const PTP: bool> DP83XXX<MIIM, PTP> {
-    const INTERRUPT_REG: u8 = 0x1B;
+    const PAGE_REG: u8 = 0x13;
+
+    const INTERRUPT_REG: (u16, u8) = (0x00, 0x1B);
     const INTERRUPT_REG_EN_LINK_CHANGE: u16 = 1 << 5;
 
     /// A mask for determining if the Link Status Change Interrupt occurred
@@ -33,7 +35,7 @@ impl<MIIM: Miim, const PTP: bool> DP83XXX<MIIM, PTP> {
 
     /// Enable the link status change interrupt
     pub fn interrupt_enable(&mut self) {
-        self.write(Self::INTERRUPT_REG, Self::INTERRUPT_REG_EN_LINK_CHANGE);
+        self.write_ext(Self::INTERRUPT_REG, Self::INTERRUPT_REG_EN_LINK_CHANGE);
     }
 
     /// Get the link speed at which the PHY is currently operating
@@ -44,7 +46,7 @@ impl<MIIM: Miim, const PTP: bool> DP83XXX<MIIM, PTP> {
 
     /// Get the value of the interrupt register.
     pub fn get_interrupt_reg_val(&mut self) -> u16 {
-        self.read(Self::INTERRUPT_REG)
+        self.read_ext(Self::INTERRUPT_REG)
     }
 
     /// Check whether a link is established or not
@@ -55,6 +57,16 @@ impl<MIIM: Miim, const PTP: bool> DP83XXX<MIIM, PTP> {
     /// Release the underlying [`Miim`]
     pub fn release(self) -> MIIM {
         self.miim
+    }
+
+    pub fn write_ext(&mut self, address_ext: (u16, u8), value: u16) {
+        self.write(Self::PAGE_REG, address_ext.0);
+        self.write(address_ext.1, value);
+    }
+
+    pub fn read_ext(&mut self, address_ext: (u16, u8)) -> u16 {
+        self.write(Self::PAGE_REG, address_ext.0);
+        self.read(address_ext.1)
     }
 }
 
