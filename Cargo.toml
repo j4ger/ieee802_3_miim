@@ -14,10 +14,11 @@ readme = "README.md"
 default = ["lan8720a", "lan8742a", "ksz8081r", "dp83640", "dp83848"]
 
 phy = []
+ptp = []
 lan8720a = ["phy", "mmd"]
 lan8742a = ["phy", "mmd"]
 ksz8081r = ["phy"]
-dp83640 = ["phy"]
+dp83640 = ["phy", "ptp"]
 dp83848 = ["phy"]
 mmd = []
 

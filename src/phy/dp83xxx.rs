@@ -1,8 +1,8 @@
 //! Phy implementation for the TI DP83xxx Series
 
-use crate::{registers::Esr, AutoNegotiationAdvertisement, ExtendedPhyStatus, Miim, Phy};
+use crate::{ptp::PTP, registers::Esr, AutoNegotiationAdvertisement, ExtendedPhyStatus, Miim, Phy};
 
-use self::registers::PHYSTS;
+use self::registers::{PHYSTS, PTPCTL};
 
 use super::{AdvancedPhySpeed, PhySpeed, PhyWithSpeed};
 
@@ -19,12 +19,11 @@ pub type DP83640<MIIM> = DP83XXX<MIIM, true>;
 /// DP83848
 pub type DP83848<MIIM> = DP83XXX<MIIM, false>;
 
-impl<MIIM: Miim, const PTP: bool> DP83XXX<MIIM, PTP> {
+impl<MIIM: Miim, const PTP_EN: bool> DP83XXX<MIIM, PTP_EN> {
     const PAGE_REG: u8 = 0x13;
 
     const INTERRUPT_REG: (u16, u8) = (0x00, 0x1B);
     const INTERRUPT_REG_EN_LINK_CHANGE: u16 = 1 << 5;
-
     /// A mask for determining if the Link Status Change Interrupt occurred
     pub const INTERRUPT_REG_INT_LINK_CHANGE: u16 = 1 << 13;
 
@@ -70,7 +69,7 @@ impl<MIIM: Miim, const PTP: bool> DP83XXX<MIIM, PTP> {
     }
 }
 
-impl<MIIM: Miim, const PTP: bool> Phy<MIIM> for DP83XXX<MIIM, PTP> {
+impl<MIIM: Miim, const PTP_EN: bool> Phy<MIIM> for DP83XXX<MIIM, PTP_EN> {
     fn best_supported_advertisement(&self) -> AutoNegotiationAdvertisement {
         AutoNegotiationAdvertisement {
             hd_10base_t: true,
@@ -99,7 +98,7 @@ impl<MIIM: Miim, const PTP: bool> Phy<MIIM> for DP83XXX<MIIM, PTP> {
     }
 }
 
-impl<MIIM: Miim, const PTP: bool> PhyWithSpeed<MIIM> for DP83XXX<MIIM, PTP> {
+impl<MIIM: Miim, const PTP_EN: bool> PhyWithSpeed<MIIM> for DP83XXX<MIIM, PTP_EN> {
     fn get_link_speed(&mut self) -> Option<AdvancedPhySpeed> {
         self.link_speed().map(Into::into)
     }
@@ -142,5 +141,75 @@ pub mod registers {
             };
             Some(speed)
         }
+    }
+
+    bitflags! {
+        pub struct PTPCTL:u16{
+            const PTP_RESET = (1<<0);
+            const PTP_DISABLE = (1<<1);
+            const PTP_ENABLE = (1<<2);
+            const PTP_LOAD_CLK = (1<<4);
+            const PTP_RD_CLK = (1<<5);
+        }
+    }
+
+    impl PTPCTL {
+        pub const ADDRESS: (u16, u8) = (0b100, 0x14);
+    }
+}
+
+impl<MIIM: Miim> DP83640<MIIM> {
+    const PTP_TIME: (u16, u8) = (0b100, 0x15);
+    const PTP_RATEL: (u16, u8) = (0b100, 0x18);
+    const PTP_RATEH: (u16, u8) = (0b100, 0x19);
+}
+
+impl<MIIM: Miim> PTP for DP83640<MIIM> {
+    fn started(&mut self) -> bool {
+        let ptpctl = PTPCTL::from_bits_truncate(self.read_ext(PTPCTL::ADDRESS));
+        ptpctl.contains(PTPCTL::PTP_ENABLE)
+    }
+
+    fn reset_clock(&mut self) {
+        let mut ptpctl = PTPCTL::from_bits_truncate(self.read_ext(PTPCTL::ADDRESS));
+        ptpctl.set(PTPCTL::PTP_RESET, true);
+        self.write_ext(PTPCTL::ADDRESS, ptpctl.bits());
+    }
+
+    fn start_ptp(&mut self) {
+        let mut ptpctl = PTPCTL::from_bits_truncate(self.read_ext(PTPCTL::ADDRESS));
+        ptpctl.set(PTPCTL::PTP_ENABLE, true);
+        self.write_ext(PTPCTL::ADDRESS, ptpctl.bits());
+    }
+
+    fn stop_ptp(&mut self) {
+        let mut ptpctl = PTPCTL::from_bits_truncate(self.read_ext(PTPCTL::ADDRESS));
+        ptpctl.set(PTPCTL::PTP_DISABLE, true);
+        self.write_ext(PTPCTL::ADDRESS, ptpctl.bits());
+    }
+
+    fn set_clock(&mut self, clock: u16) {
+        let mut ptpctl = PTPCTL::from_bits_truncate(self.read_ext(PTPCTL::ADDRESS));
+        ptpctl.set(PTPCTL::PTP_LOAD_CLK, true);
+
+        self.write_ext(Self::PTP_TIME, clock);
+
+        self.write_ext(PTPCTL::ADDRESS, ptpctl.bits());
+    }
+
+    fn read_clock(&mut self) -> u16 {
+        let mut ptpctl = PTPCTL::from_bits_truncate(self.read_ext(PTPCTL::ADDRESS));
+        ptpctl.set(PTPCTL::PTP_RD_CLK, true);
+        self.write_ext(PTPCTL::ADDRESS, ptpctl.bits());
+
+        self.read_ext(Self::PTP_TIME)
+    }
+
+    fn set_rate_control(&mut self, rate: u32) {
+        let high_bits = (rate >> 16) as u16;
+        let low_bits = rate as u16;
+
+        self.write_ext(Self::PTP_RATEH, high_bits);
+        self.write_ext(Self::PTP_RATEL, low_bits);
     }
 }

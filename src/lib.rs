@@ -13,6 +13,11 @@ mod mmd;
 #[cfg(feature = "mmd")]
 use mmd::Mmd;
 
+#[cfg(feature = "ptp")]
+mod ptp;
+#[cfg(feature = "ptp")]
+pub use ptp::PTP;
+
 pub mod registers;
 use registers::*;
 
